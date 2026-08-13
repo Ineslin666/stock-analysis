@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 数据缓存（可重新生成）
+data/
+
+# macOS
+.DS_Store
