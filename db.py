@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS stock_daily (
     close     REAL,
     pe        REAL,                   -- PE(TTM)，来自 stock_value_em
     pb        REAL,                   -- 来自 stock_value_em
-    turnover  REAL,                   -- 成交额（元），来自 stock_zh_a_hist
+    turnover  REAL,                   -- 成交额（元），来自新浪 stock_zh_a_daily
     PRIMARY KEY (code, trade_date)
 );
 
@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
     score         REAL,               -- 综合得分（满分 100）
     reasons       TEXT,               -- 筛选理由（多行文本）
     verdict       TEXT,               -- buy / buy_batch / hold
+    verdict_reason TEXT,              -- 结论全文（标签+理由+价位+免责声明，04 规范 §9）
     ref_price_low REAL,               -- 参考价位下限
     ref_price_high REAL,              -- 参考价位上限
     close_price   REAL,               -- 推荐日收盘价
@@ -109,9 +110,13 @@ def _connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """建表（幂等，可重复调用）。"""
+    """建表（幂等，可重复调用）+ 老库列迁移。"""
     with _connect() as conn:
         conn.executescript(_SCHEMA)
+        # 迁移：老库 recommendations 缺 verdict_reason 列则补上
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(recommendations)")}
+        if "verdict_reason" not in cols:
+            conn.execute("ALTER TABLE recommendations ADD COLUMN verdict_reason TEXT")
 
 
 def _exec(sql: str, params: Iterable[Any] = ()) -> None:
@@ -329,6 +334,14 @@ def get_recommendations(date_str: Optional[str] = None) -> pd.DataFrame:
     if date_str:
         return _query_df("SELECT * FROM recommendations WHERE rec_date = ? ORDER BY rank", (date_str,))
     return _query_df("SELECT * FROM recommendations ORDER BY rec_date DESC, rank")
+
+
+def set_verdict(date_str: str, code: str, verdict: str, verdict_reason: str,
+                ref_price_low: float, ref_price_high: float) -> None:
+    """回填推荐记录的买入结论（analyzer.py 用）。"""
+    _exec("UPDATE recommendations SET verdict = ?, verdict_reason = ?, "
+          "ref_price_low = ?, ref_price_high = ? WHERE rec_date = ? AND code = ?",
+          (verdict, verdict_reason, ref_price_low, ref_price_high, date_str, code))
 
 
 def get_recent_recommended_codes(days: int = 60) -> set[str]:
