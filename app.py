@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -59,34 +60,67 @@ templates.env.globals.update(badge_labels=BADGE_LABELS, fmt1=fmt1, fmt2=fmt2,
                              fmt_pct=fmt_pct, fmt_amount=fmt_amount)
 
 
-# ---------- 启动补跑兜底（02 技术方案 §4） ----------
+# ---------- 每日筛选：18:30 定时任务 + 启动补跑兜底（02 技术方案 §4） ----------
+
+SCREEN_TIME = "18:30"   # 新浪日线当日 K 线约 17:00~18:00 才发布，故定在 18:30（02 规范 §4）
+_run_lock = threading.Lock()
+
+
+def _run_today(reason: str) -> None:
+    """完整跑一遍当日筛选（force 刷新快照 + 选股 + 结论），幂等覆盖当日结果。"""
+    if not _run_lock.acquire(blocking=False):
+        print(f"[run] 已有筛选任务进行中，跳过（{reason}）", flush=True)
+        return
+    try:
+        fetcher.fetch_snapshot(force=True)   # force：刷新最终价，避免快照 TTL=当天 停留盘中值
+        screener.run()
+        analyzer.run()
+        print(f"[run] 当日筛选完成（{reason}）", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[run] 筛选失败（{reason}）: {e}", flush=True)
+    finally:
+        _run_lock.release()
+
 
 def _maybe_backfill() -> None:
-    """交易日且当日无推荐 → 后台线程补跑筛选+结论（不阻塞启动）。"""
+    """启动检查：交易日且当日无推荐 → 后台补跑（不阻塞启动）。
+
+    当日已有推荐但生成于 18:30 之前（可能用了盘中数据）且现在已过 18:30 → 重跑覆盖。
+    """
     try:
         td = fetcher.latest_trade_date()
         if td != date.today().isoformat():
             return
-        if not db.get_recommendations(td).empty:
+        recs = db.get_recommendations(td)
+        if recs.empty:
+            threading.Thread(target=_run_today, args=("启动补跑",), daemon=True).start()
             return
+        cutoff = datetime.strptime(f"{td} {SCREEN_TIME}:00", "%Y-%m-%d %H:%M:%S")
+        created = recs["created_at"].max()
+        if created < cutoff.isoformat() and datetime.now() >= cutoff:
+            threading.Thread(target=_run_today, args=("收盘后补跑",), daemon=True).start()
     except Exception:  # noqa: BLE001 日历不可用则不补跑
         return
-    threading.Thread(target=_run_today, daemon=True).start()
 
 
-def _run_today() -> None:
-    try:
-        fetcher.fetch_snapshot()
-        screener.run()
-        analyzer.run()
-        print("[backfill] 当日筛选补跑完成")
-    except Exception as e:  # noqa: BLE001
-        print(f"[backfill] 补跑失败: {e}")
+def _scheduled_job() -> None:
+    """18:30 定时任务入口：非交易日跳过；交易日完整重跑（覆盖当日盘中补跑的结果）。"""
+    td = fetcher.latest_trade_date()
+    if td != date.today().isoformat():
+        print(f"[scheduler] 今日非交易日（最新交易日 {td}），跳过", flush=True)
+        return
+    _run_today("定时 18:30")
 
 
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_scheduled_job, "cron", hour=18, minute=30, day_of_week="mon-fri",
+                      id="daily_screen", misfire_grace_time=4 * 3600, coalesce=True,
+                      max_instances=1)
+    scheduler.start()
+    print("[scheduler] 已启动：每个交易日 18:30 自动筛选（错过 4 小时内开机补跑）", flush=True)
     _maybe_backfill()
 
 
@@ -165,7 +199,10 @@ def index(request: Request):
     recs = db.get_recommendations()
     if recs.empty:
         return templates.TemplateResponse(request, "index.html",
-                                          {"active": "index", "recs": [], "rec_date": "-"})
+                                          {"active": "index", "recs": [], "rec_date": "-",
+                                           "banner": "还没有推荐数据。网站会在每个交易日 18:30 自动生成；"
+                                                     "若是刚启动，请稍等几分钟后刷新本页。",
+                                           "update_note": None})
     rec_date = recs["rec_date"].max()
     rows = db.get_recommendations(rec_date)
     out = []
@@ -173,8 +210,24 @@ def index(request: Request):
         note = (f"PE 处于近 5 年 {r['pe_percentile']:.0f}% 分位"
                 if r["pe_percentile"] is not None else "估值历史数据不足")
         out.append({**r.to_dict(), "verdict_note": note})
+    # 数据状态（阶段 5.3 降级提示）：推荐落后于最新交易日 → 提示；当日筛选成功 → 显示更新时间
+    banner, update_note = None, None
+    try:
+        td = fetcher.latest_trade_date()
+        log = db.get_last_screening_log()
+        if td and rec_date != td:
+            banner = (f"今日（{td}）的推荐还没有生成，以下显示的是 {rec_date} 的结果。"
+                      "网站会在每个交易日 18:30 自动更新；若今天收盘后仍未更新，"
+                      "请检查网络后重新启动网站。")
+            if log and log["run_date"] == td and log["status"] == "error" and log["error_msg"]:
+                banner += f"（最近一次自动筛选失败：{log['error_msg']}）"
+        elif log and log["run_date"] == td and log["status"] == "ok" and log["run_time"]:
+            update_note = f"已于 {log['run_time'][11:16]} 更新"
+    except Exception:  # noqa: BLE001 日历/日志不可用则静默降级
+        pass
     return templates.TemplateResponse(request, "index.html",
-                                      {"active": "index", "recs": out, "rec_date": rec_date})
+                                      {"active": "index", "recs": out, "rec_date": rec_date,
+                                       "banner": banner, "update_note": update_note})
 
 
 @app.get("/stock/{code}", response_class=HTMLResponse)
