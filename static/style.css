@@ -1,0 +1,200 @@
+/* 03-界面设计规范 v1.0：清新极简。色板/字号/组件均以此规范为准。 */
+
+:root {
+  --bg: #F7FAF8;
+  --card: #FFFFFF;
+  --brand: #2E9E6B;
+  --brand-bg: #E8F5EE;
+  --warn: #D9A13B;
+  --warn-bg: #FBF3E2;
+  --gray: #8A9490;
+  --gray-bg: #EFF2F0;
+  --down: #D9544D;
+  --down-bg: #FBEBEA;
+  --title: #1F2A25;
+  --body: #3D4A44;
+  --banner-bg: #EFF5F1;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--body);
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- 免责声明横幅（03 §4.4，全站固定顶部） ---------- */
+.disclaimer-banner {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--banner-bg);
+  color: var(--gray);
+  font-size: 13px;
+  text-align: center;
+  padding: 6px 12px;
+}
+
+/* ---------- 页头与导航（03 §5 base.html） ---------- */
+.site-header {
+  background: var(--card);
+  border-bottom: 1px solid var(--gray-bg);
+}
+.site-header .inner {
+  max-width: 1080px; margin: 0 auto; padding: 14px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.site-name {
+  font-size: 20px; font-weight: 600; color: var(--title);
+}
+.site-name a { color: var(--title); }
+.site-name a:hover { text-decoration: none; }
+.nav { display: flex; gap: 8px; }
+.nav a {
+  display: inline-flex; align-items: center;
+  min-height: 44px; padding: 0 14px; border-radius: 8px;
+  color: var(--body); font-size: 15px;
+}
+.nav a:hover { background: var(--gray-bg); text-decoration: none; }
+.nav a.active { color: var(--brand); background: var(--brand-bg); font-weight: 600; }
+
+.container { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+
+/* ---------- 标题 ---------- */
+.page-title { font-size: 28px; font-weight: 600; color: var(--title); }
+.page-sub { font-size: 13px; color: var(--gray); margin-top: 4px; }
+.section-title { font-size: 20px; font-weight: 600; color: var(--title); margin: 32px 0 16px; }
+
+/* ---------- 股票卡片（03 §4.1） ---------- */
+.card-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 20px; }
+.stock-card {
+  display: block;
+  background: var(--card); border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(31, 42, 37, .06);
+  padding: 20px;
+  transition: transform .15s ease;
+}
+.stock-card:hover { transform: translateY(-2px); text-decoration: none; }
+.card-top { display: flex; align-items: center; justify-content: space-between; }
+.industry-tag {
+  font-size: 13px; color: var(--gray);
+  background: var(--gray-bg); border-radius: 20px; padding: 2px 10px;
+}
+.card-rank { font-size: 13px; color: var(--gray); }
+.stock-name { font-size: 17px; font-weight: 600; color: var(--title); margin-top: 10px; }
+.stock-code { font-size: 13px; color: var(--gray); margin-top: 2px; }
+.card-verdict { margin-top: 14px; }
+.card-metrics {
+  display: flex; gap: 16px; margin-top: 16px;
+  border-top: 1px solid var(--gray-bg); padding-top: 14px;
+}
+.card-metric { flex: 1; }
+.card-metric .v { font-size: 15px; font-weight: 600; color: var(--title); font-variant-numeric: tabular-nums; }
+.card-metric .k { font-size: 13px; color: var(--gray); }
+.card-more { display: block; margin-top: 14px; font-size: 15px; }
+
+/* ---------- 结论徽章（03 §4.2） ---------- */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 999px; padding: 8px 16px; font-weight: 600;
+}
+.badge.buy { color: var(--brand); background: var(--brand-bg); }
+.badge.buy_batch { color: var(--warn); background: var(--warn-bg); }
+.badge.hold { color: var(--gray); background: var(--gray-bg); }
+.badge-note { font-size: 13px; color: var(--gray); margin-top: 8px; }
+
+/* ---------- 通用卡片 ---------- */
+.panel {
+  background: var(--card); border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(31, 42, 37, .06);
+  padding: 24px;
+}
+.panel + .panel { margin-top: 16px; }
+
+/* ---------- 个股概览条（03 §5 个股页） ---------- */
+.overview { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.overview .name { font-size: 28px; font-weight: 600; color: var(--title); }
+.overview .code { font-size: 15px; color: var(--gray); }
+.overview .price { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: auto; }
+.chg-up { color: var(--brand); background: var(--brand-bg); }
+.chg-down { color: var(--down); background: var(--down-bg); }
+.chg {
+  font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums;
+  border-radius: 8px; padding: 4px 10px;
+}
+.overview-meta { display: flex; gap: 20px; font-size: 13px; color: var(--gray); margin-top: 6px; }
+
+/* ---------- 结论卡片（03 §5 个股页） ---------- */
+.verdict-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.verdict-text { margin-top: 12px; white-space: pre-line; }
+.verdict-disclaimer {
+  margin-top: 12px; padding: 8px 12px; border-radius: 8px;
+  background: var(--banner-bg); color: var(--gray); font-size: 13px;
+}
+
+/* ---------- 指标网格（03 §4.3） ---------- */
+.metric-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+}
+.metric {
+  background: var(--card); border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(31, 42, 37, .06);
+  padding: 16px;
+}
+.metric .v { font-size: 20px; font-weight: 600; color: var(--title); font-variant-numeric: tabular-nums; }
+.metric .k { font-size: 15px; margin-top: 4px; }
+.metric .d { font-size: 13px; color: var(--gray); margin-top: 2px; }
+
+/* ---------- 历史页（03 §5） ---------- */
+.hist-date {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 20px; font-weight: 600; color: var(--title); margin: 28px 0 12px;
+}
+.hist-date .line { flex: 1; border-top: 1px solid var(--gray-bg); }
+.hist-row {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--card); border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(31, 42, 37, .06);
+  padding: 14px 20px;
+}
+.hist-row + .hist-row { margin-top: 10px; }
+.hist-row .name { font-size: 17px; font-weight: 600; color: var(--title); }
+.hist-row .code { font-size: 13px; color: var(--gray); }
+.hist-row .gain {
+  margin-left: auto; font-size: 15px; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.hist-row .gain .sub { display: block; font-size: 13px; color: var(--gray); font-weight: 400; }
+.gain-up { color: var(--brand); }
+.gain-down { color: var(--down); }
+.hist-note { font-size: 13px; color: var(--gray); margin-top: 12px; }
+
+/* ---------- 方法论页（03 §5） ---------- */
+.method-step { margin-top: 24px; }
+.method-step h3 { font-size: 17px; color: var(--title); margin-bottom: 6px; }
+.method-step p { margin-bottom: 6px; }
+.glossary { border-collapse: collapse; width: 100%; margin-top: 12px; }
+.glossary th, .glossary td {
+  text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--gray-bg);
+  font-size: 14px; vertical-align: top;
+}
+.glossary th { color: var(--title); font-weight: 600; }
+.glossary td:first-child { color: var(--title); font-weight: 500; white-space: nowrap; }
+.glossary td:last-child { color: var(--gray); }
+
+/* ---------- 空态与页脚 ---------- */
+.empty { text-align: center; color: var(--gray); padding: 60px 0; font-size: 15px; }
+.home-foot { text-align: center; margin-top: 36px; font-size: 13px; color: var(--gray); }
+.site-footer { text-align: center; font-size: 13px; color: var(--gray); margin-top: 48px; }
+
+/* ---------- 响应式（03 §6） ---------- */
+@media (max-width: 768px) {
+  .card-row { grid-template-columns: 1fr; }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .page-title { font-size: 24px; }
+  .overview .price { margin-left: 0; }
+}

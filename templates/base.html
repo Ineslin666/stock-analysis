@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}股票学习站{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="disclaimer-banner">本网站内容仅供学习参考，不构成投资建议。股市有风险，投资需谨慎。</div>
+  <header class="site-header">
+    <div class="inner">
+      <div class="site-name"><a href="/">每日 3 只优质股</a></div>
+      <nav class="nav">
+        <a href="/" class="{{ 'active' if active == 'index' else '' }}">今日精选</a>
+        <a href="/history" class="{{ 'active' if active == 'history' else '' }}">历史推荐</a>
+        <a href="/methodology" class="{{ 'active' if active == 'methodology' else '' }}">方法论</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">仅供学习参考，不构成投资建议。股市有风险，投资需谨慎。</footer>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}历史推荐 · 股票学习站{% endblock %}
+{% block content %}
+<h1 class="page-title">历史推荐</h1>
+<p class="page-sub">过去每一天推荐的股票与当时结论，看看它们后来表现如何</p>
+<p class="hist-note">本页内容仅供学习参考，不构成投资建议。股市有风险，投资需谨慎。</p>
+
+{% if groups %}
+  {% for g in groups %}
+  <div class="hist-date">{{ g.date }}<span class="line"></span></div>
+  {% for r in g.rows %}
+  <a class="hist-row" href="/stock/{{ r.code }}">
+    <div>
+      <div class="name">{{ r.name }}</div>
+      <div class="code">{{ r.code }} · {{ r.industry }}</div>
+    </div>
+    <span class="badge {{ r.verdict }}">{{ badge_labels[r.verdict] }}</span>
+    <div class="gain {{ 'gain-up' if r.gain is not none and r.gain >= 0 else 'gain-down' if r.gain is not none else '' }}">
+      {% if r.gain is none %}—{% else %}{{ '+' if r.gain >= 0 else '' }}{{ fmt2(r.gain) }}%{% endif %}
+      <span class="sub">推荐日收盘 {{ fmt2(r.close_price) }} → 现价 {{ fmt2(r.current_price) }}</span>
+    </div>
+  </a>
+  {% endfor %}
+  {% endfor %}
+{% else %}
+  <div class="empty">还没有历史推荐记录。网站会在每个交易日收盘后自动更新。</div>
+{% endif %}
+{% endblock %}

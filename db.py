@@ -164,6 +164,13 @@ def get_snapshot() -> pd.DataFrame:
     return _query_df("SELECT * FROM stock_snapshot")
 
 
+def get_snapshot_row(code: str) -> Optional[sqlite3.Row]:
+    """单只股票的快照行（页面用）。"""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT * FROM stock_snapshot WHERE code = ?", (code,)).fetchone()
+
+
 def get_snapshot_codes() -> set[str]:
     df = _query_df("SELECT code FROM stock_snapshot")
     return set(df["code"]) if not df.empty else set()
@@ -342,6 +349,14 @@ def set_verdict(date_str: str, code: str, verdict: str, verdict_reason: str,
     _exec("UPDATE recommendations SET verdict = ?, verdict_reason = ?, "
           "ref_price_low = ?, ref_price_high = ? WHERE rec_date = ? AND code = ?",
           (verdict, verdict_reason, ref_price_low, ref_price_high, date_str, code))
+
+
+def get_latest_recommendation(code: str) -> Optional[sqlite3.Row]:
+    """该股最近一次推荐记录（详情页用）。"""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT * FROM recommendations WHERE code = ? ORDER BY rec_date DESC LIMIT 1",
+            (code,)).fetchone()
 
 
 def get_recent_recommended_codes(days: int = 60) -> set[str]:

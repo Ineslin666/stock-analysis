@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ stock.name }} · 股票学习站{% endblock %}
+{% block content %}
+
+{% if stock %}
+<!-- 概览条 -->
+<div class="panel">
+  <div class="overview">
+    <div>
+      <div class="name">{{ stock.name }}</div>
+      <div class="code">{{ stock.code }}{% if stock.industry %} · {{ stock.industry }}{% endif %}</div>
+    </div>
+    <div class="price">{{ fmt2(price) }}</div>
+    {% if chg is not none %}
+    <span class="chg {{ 'chg-up' if chg >= 0 else 'chg-down' }}">{{ '+' if chg >= 0 else '' }}{{ fmt2(chg) }}%</span>
+    {% endif %}
+  </div>
+  <div class="overview-meta">
+    {% if stock.total_mv %}<span>总市值 {{ fmt_amount(stock.total_mv) }}</span>{% endif %}
+    {% if stock.pe_ttm %}<span>PE-TTM {{ fmt1(stock.pe_ttm) }}</span>{% endif %}
+    {% if stock.pb %}<span>市净率 {{ fmt2(stock.pb) }}</span>{% endif %}
+  </div>
+</div>
+
+{% if rec %}
+<!-- 结论卡片（含免责声明，01 需求要求） -->
+<div class="panel">
+  <div class="verdict-head">
+    <span class="badge {{ rec.verdict }}">{{ badge_labels[rec.verdict] }}</span>
+    <span class="badge-note">推荐日期 {{ rec.rec_date }} ｜ 综合得分 {{ rec.score|round|int }} 分</span>
+  </div>
+  {% set lines = rec.verdict_reason.split('\n') %}
+  <div class="verdict-text">{{ lines[:-1]|join('\n') }}</div>
+  <div class="verdict-disclaimer">{{ lines[-1] }}</div>
+</div>
+{% endif %}
+
+<!-- 五组指标（03 §4.3） -->
+{% for group in groups %}
+<h2 class="section-title">{{ group.title }}</h2>
+<div class="metric-grid">
+  {% for m in group['items'] %}
+  <div class="metric">
+    <div class="v">{{ m.v }}</div>
+    <div class="k">{{ m.k }}</div>
+    <div class="d">{{ m.d }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+{% if rec %}
+<h2 class="section-title">当时筛选理由</h2>
+<div class="panel">
+  <div class="verdict-text">{{ rec.reasons }}</div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty">未找到该股票，可能不在推荐列表中。<a href="/">返回首页</a></div>
+{% endif %}
+
+{% endblock %}

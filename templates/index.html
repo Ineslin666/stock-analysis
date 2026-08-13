@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}今日精选 · 股票学习站{% endblock %}
+{% block content %}
+<h1 class="page-title">今日精选</h1>
+<p class="page-sub">{{ rec_date }} ｜ 从全市场约 5000 只 A 股中按固定逻辑筛选</p>
+
+{% if recs %}
+  {% if recs|length < 3 %}
+    <p class="page-sub">今日符合标准的股票不足 3 只</p>
+  {% endif %}
+  <div class="card-row">
+    {% for r in recs %}
+    <a class="stock-card" href="/stock/{{ r.code }}">
+      <div class="card-top">
+        <span class="industry-tag">{{ r.industry }}</span>
+        <span class="card-rank">No.{{ r.rank }}</span>
+      </div>
+      <div class="stock-name">{{ r.name }}</div>
+      <div class="stock-code">{{ r.code }}</div>
+      <div class="card-verdict">
+        <span class="badge {{ r.verdict }}">{{ badge_labels[r.verdict] }}</span>
+        <div class="badge-note">{{ r.verdict_note }}</div>
+      </div>
+      <div class="card-metrics">
+        <div class="card-metric"><div class="v">{{ fmt_pct(r.pe_percentile) }}</div><div class="k">PE 5年分位</div></div>
+        <div class="card-metric"><div class="v">{{ fmt1(r.roe) }}%</div><div class="k">ROE</div></div>
+        <div class="card-metric"><div class="v">{{ fmt2(r.dividend_yield) }}%</div><div class="k">股息率</div></div>
+      </div>
+      <span class="card-more">查看详情 →</span>
+    </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty">今天还没有推荐数据。网站会在每个交易日收盘后自动更新。</div>
+{% endif %}
+
+<p class="home-foot"><a href="/methodology">为什么是这 3 只？（看筛选逻辑）</a></p>
+{% endblock %}
