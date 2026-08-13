@@ -271,8 +271,8 @@ def fetch_pe_pb_history(code: str, force: bool = False) -> pd.DataFrame:
     增量更新：已缓存到最近交易日则跳过。写入 stock_daily.pe/pb。
     """
     last_td = latest_trade_date()
-    if not force and last_td and db.get_daily_last_date(code) and \
-            str(db.get_daily_last_date(code)) >= last_td:
+    if not force and last_td and db.get_daily_last_date(code, "pe") and \
+            str(db.get_daily_last_date(code, "pe")) >= last_td:
         return db.get_daily(code)
 
     _throttle()
@@ -289,6 +289,7 @@ def fetch_pe_pb_history(code: str, force: bool = False) -> pd.DataFrame:
         "pb": _num(raw["市净率"]),
     })
     df = df[df["trade_date"] >= "2019-01-01"]  # 只留近 5 年+，控制体积
+    df = df[~((df["pe"] <= 0) & (df["pb"] <= 0))]  # 剔除纯占位行（当日估值未公布）
     db.upsert_daily_value(code, df)
     # 回填快照的权威 PE/PB/总市值（最新一行）
     last_row = raw.iloc[-1]
@@ -309,8 +310,8 @@ def fetch_daily(code: str, force: bool = False) -> pd.DataFrame:
     symbol 需带 sh/sz 前缀；剔除 volume=0 的停牌日。
     """
     last_td = latest_trade_date()
-    if not force and last_td and db.get_daily_last_date(code) and \
-            str(db.get_daily_last_date(code)) >= last_td:
+    if not force and last_td and db.get_daily_last_date(code, "close") and \
+            str(db.get_daily_last_date(code, "close")) >= last_td:
         return db.get_daily(code)
 
     prefix = "sh" if code.startswith("6") else "sz"

@@ -241,8 +241,16 @@ def get_daily(code: str) -> pd.DataFrame:
     )
 
 
-def get_daily_last_date(code: str) -> Optional[str]:
-    df = _query_df("SELECT MAX(trade_date) AS d FROM stock_daily WHERE code = ?", (code,))
+def get_daily_last_date(code: str, col: Optional[str] = None) -> Optional[str]:
+    """该股日线最新日期。col 给定时只看该列非空的日期——不同数据源（新浪
+    日线写 close/turnover，东财写 pe/pb）的新鲜度要分开判断。"""
+    if col is None:
+        df = _query_df("SELECT MAX(trade_date) AS d FROM stock_daily WHERE code = ?", (code,))
+    else:
+        assert col in ("close", "turnover", "pe", "pb"), f"非法列: {col}"
+        df = _query_df(
+            f"SELECT MAX(trade_date) AS d FROM stock_daily WHERE code = ? AND {col} IS NOT NULL",
+            (code,))
     return None if df.empty else df["d"].iloc[0]
 
 
