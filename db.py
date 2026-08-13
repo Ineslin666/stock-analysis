@@ -359,9 +359,16 @@ def get_latest_recommendation(code: str) -> Optional[sqlite3.Row]:
             (code,)).fetchone()
 
 
-def get_recent_recommended_codes(days: int = 60) -> set[str]:
-    df = _query_df(
-        "SELECT DISTINCT code FROM recommendations WHERE rec_date >= date('now', ?)",
-        (f"-{days} days",),
-    )
+def get_recent_recommended_codes(days: int = 60, exclude_date: Optional[str] = None) -> set[str]:
+    """近 days 天推荐过的代码（冷却名单）。
+
+    exclude_date：同日幂等重跑时传当日 trade_date，当日已有推荐不计入冷却名单，
+    保证同样的数据重跑仍选出真正的 Top3（04 规范 §4.5）。
+    """
+    sql = "SELECT DISTINCT code FROM recommendations WHERE rec_date >= date('now', ?)"
+    params: list = [f"-{days} days"]
+    if exclude_date:
+        sql += " AND rec_date != ?"
+        params.append(exclude_date)
+    df = _query_df(sql, params)
     return set(df["code"]) if not df.empty else set()

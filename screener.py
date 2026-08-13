@@ -225,12 +225,23 @@ def score_technical(daily: pd.DataFrame) -> tuple[int, str]:
     return s, ("、".join(notes) if notes else "技术面偏弱")
 
 
+# 技术面术语 → 大白话（筛选理由用，04 规范 §8）
+TECH_NOTE_PLAIN = {
+    "站上60日线": "现价高于近 60 天平均价（中期趋势向上）",
+    "站上20日线": "现价高于近 20 天平均价（短期趋势向上）",
+    "距52周高点回撤<20%": "距一年内最高价回撤不到 20%（走势强）",
+    "技术面偏弱": "走势偏弱",
+    "日线缺失": "日线数据缺失",
+}
+
+
 # ---------- ⑤ 排序与选择 ----------
 
 def select_top(candidates: list[dict], trade_date: str, limit: int = 3) -> list[dict]:
     """按总分降序 + 行业分散（同行业每天最多 1 只）+ 60 天冷却期，取前 limit 名。"""
     candidates.sort(key=lambda c: c["score"], reverse=True)
-    cooled = db.get_recent_recommended_codes(COOLDOWN_DAYS)
+    # 同日幂等重跑：当日已有推荐不计入冷却名单，否则重跑会排除真 Top3 选到次优
+    cooled = db.get_recent_recommended_codes(COOLDOWN_DAYS, exclude_date=trade_date)
     picked, used_industries = [], set()
     for c in candidates:
         if len(picked) >= limit:
@@ -302,24 +313,42 @@ def run(trade_date: Optional[str] = None, dry_run: bool = False) -> dict:
     if not dry_run:
         db.clear_recommendations(trade_date)   # 幂等：同日先删后插（06 规范）
 
-    # 筛选理由文本（04 规范 §8）+ 写库
+    # 筛选理由文本（04 规范 §8：面向金融小白，每条 = 指标是什么 + 本公司数值 + 为什么好）+ 写库
     for rank, c in enumerate(picked, 1):
         f = c["fin"]
+        roe = f["roe_latest"]
         lines = [
-            f"ROE 最新 {f['roe_latest']:.1f}%，连续 3 年 > 10%",
-            f"营收复合 +{f['revenue_cagr3']:.1f}%、净利复合 +{f['profit_cagr3']:.1f}%"
-            if f.get("revenue_cagr3") is not None else f"净利复合 +{f['profit_cagr3']:.1f}%",
-            f"资产负债率 {f['debt_ratio']:.1f}%"
-            + ("（高杠杆行业放宽至 85%）" if is_high_leverage(c["industry"]) else ""),
-            f"经营现金流/净利 {f['ocf_to_profit']:.2f}"
-            if f.get("ocf_to_profit") is not None else "经营现金流数据缺失",
-            f"股息率 {c['dividend']:.2f}%" if c["dividend"] is not None else "近12月无派息记录",
-            f"PE-TTM {c['pe_ttm']:.1f}，5 年分位 {c['pe_pct']:.0f}%"
-            if c["pe_pct"] is not None else f"PE-TTM {c['pe_ttm']:.1f}，历史数据不足",
-            f"20 日均成交额 {c['avg20'] / 1e8:.1f} 亿",
-            f"得分：质量 {c['q_score']}/40（{'，'.join(c['q_high'])}）+ 估值 {c['v_score']}/40"
-            f" + 技术 {c['t_score']}/20（{c['t_note']}）",
+            f"赚钱能力：ROE {roe:.1f}%（股东每投 100 元，公司一年能赚 {roe:.1f} 元），"
+            f"连续 3 年都高于 10% 的及格线",
         ]
+        if f.get("revenue_cagr3") is not None:
+            lines.append(f"成长性：近 3 年收入平均每年增长 {f['revenue_cagr3']:.1f}%、"
+                         f"利润平均每年增长 {f['profit_cagr3']:.1f}%——生意越做越大")
+        else:
+            lines.append(f"成长性：近 3 年利润平均每年增长 {f['profit_cagr3']:.1f}%——生意越做越大")
+        lines.append(f"财务安全：资产负债率 {f['debt_ratio']:.1f}%（欠的债只占总资产的 "
+                     f"{f['debt_ratio']:.1f}%，低于 60% 的安全线）"
+                     + ("（该行业属高杠杆行业，安全线放宽到 85%）" if is_high_leverage(c["industry"]) else ""))
+        if f.get("ocf_to_profit") is not None:
+            lines.append(f"利润含金量：经营现金流是净利润的 {f['ocf_to_profit']:.2f} 倍"
+                         f"（0.7 以上说明赚到的是真金白银，不是纸面利润）")
+        else:
+            lines.append("利润含金量：现金流数据缺失，该项计 0 分")
+        if c["dividend"] is not None:
+            lines.append(f"分红回报：股息率 {c['dividend']:.2f}%"
+                         f"（持有 1 年，每 100 元投资大约能拿到 {c['dividend']:.2f} 元分红）")
+        else:
+            lines.append("分红回报：近 12 个月没有派息记录，该项计 0 分")
+        if c["pe_pct"] is not None:
+            lines.append(f"估值便宜：PE-TTM {c['pe_ttm']:.1f} 倍（按当前盈利大约 {c['pe_ttm']:.0f} 年回本），"
+                         f"处于近 5 年最便宜的 {c['pe_pct']:.0f}% 区间"
+                         f"（近 5 年有 {100 - c['pe_pct']:.0f}% 的时间比现在贵）")
+        else:
+            lines.append(f"估值：PE-TTM {c['pe_ttm']:.1f} 倍，历史数据不足无法比较贵贱")
+        lines.append(f"买卖方便：平均每天成交 {c['avg20'] / 1e8:.1f} 亿元，想买想卖都容易")
+        t_plain = "、".join(TECH_NOTE_PLAIN.get(n, n) for n in c["t_note"].split("、"))
+        lines.append(f"综合得分 {c['score']:.0f} 分（满分 100）= 赚钱能力 {c['q_score']}/40"
+                     f" + 估值便宜 {c['v_score']}/40 + 走势健康 {c['t_score']}/20（{t_plain}）")
         c["reasons"] = "\n".join(f"· {x}" for x in lines)
         c["rank"] = rank
 
