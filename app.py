@@ -82,34 +82,45 @@ def _run_today(reason: str) -> None:
         _run_lock.release()
 
 
-def _maybe_backfill() -> None:
-    """启动检查：交易日且当日无推荐 → 后台补跑（不阻塞启动）。
+def _screen_cutoff(td: str) -> datetime:
+    return datetime.strptime(f"{td} {SCREEN_TIME}:00", "%Y-%m-%d %H:%M:%S")
 
-    当日已有推荐但生成于 18:30 之前（可能用了盘中数据）且现在已过 18:30 → 重跑覆盖。
-    """
+
+def _screen_needed(td: str) -> bool:
+    """最新交易日 td 是否需要筛选：当日无推荐；或推荐生成于 18:30 前（可能用了盘中数据）且现在已过 18:30。"""
     try:
-        td = fetcher.latest_trade_date()
-        if td != date.today().isoformat():
-            return
         recs = db.get_recommendations(td)
         if recs.empty:
-            threading.Thread(target=_run_today, args=("启动补跑",), daemon=True).start()
-            return
-        cutoff = datetime.strptime(f"{td} {SCREEN_TIME}:00", "%Y-%m-%d %H:%M:%S")
-        created = recs["created_at"].max()
-        if created < cutoff.isoformat() and datetime.now() >= cutoff:
-            threading.Thread(target=_run_today, args=("收盘后补跑",), daemon=True).start()
-    except Exception:  # noqa: BLE001 日历不可用则不补跑
-        return
+            return True
+        cutoff = _screen_cutoff(td)
+        return recs["created_at"].max() < cutoff.isoformat() and datetime.now() >= cutoff
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _scheduled_job() -> None:
-    """18:30 定时任务入口：非交易日跳过；交易日完整重跑（覆盖当日盘中补跑的结果）。"""
-    td = fetcher.latest_trade_date()
-    if td != date.today().isoformat():
-        print(f"[scheduler] 今日非交易日（最新交易日 {td}），跳过", flush=True)
+    """筛选自检（18:30 定时 + 每 30 分钟兜底 + 启动补跑，三处共用同一套判断）：
+    最新交易日无推荐 → 跑；推荐为盘中生成且已过 18:30 → 完整数据重跑覆盖；否则跳过。
+    电脑睡眠错过 18:30 也没关系：醒来后 30 分钟内自动补上，周末开机也能补跑周五的。"""
+    try:
+        td = fetcher.latest_trade_date()
+        if not td:
+            return
+        if td == date.today().isoformat() and datetime.now() < _screen_cutoff(td):
+            if not db.get_recommendations(td).empty:
+                print("[scheduler] 盘中且已有推荐，等待 18:30 后用完整数据重跑", flush=True)
+                return
+            # 盘中尚无推荐（如早上补跑失败）→ 用可得数据先跑一版，18:30 后还会重跑覆盖
+    except Exception:  # noqa: BLE001
         return
-    _run_today("定时 18:30")
+    if not _screen_needed(td):
+        return
+    _run_today(f"定时补跑 {td}")
+
+
+def _maybe_backfill() -> None:
+    """启动自检（后台线程，不阻塞启动）：复用 _scheduled_job 的同一套判断。"""
+    threading.Thread(target=_scheduled_job, daemon=True).start()
 
 
 @app.on_event("startup")
@@ -119,8 +130,10 @@ def _startup() -> None:
     scheduler.add_job(_scheduled_job, "cron", hour=18, minute=30, day_of_week="mon-fri",
                       id="daily_screen", misfire_grace_time=4 * 3600, coalesce=True,
                       max_instances=1)
+    scheduler.add_job(_scheduled_job, "interval", minutes=30, id="screen_catchup",
+                      coalesce=True, max_instances=1)
     scheduler.start()
-    print("[scheduler] 已启动：每个交易日 18:30 自动筛选（错过 4 小时内开机补跑）", flush=True)
+    print("[scheduler] 已启动：交易日 18:30 自动筛选 + 每 30 分钟自检补跑（错过 18:30 也不漏）", flush=True)
     _maybe_backfill()
 
 
