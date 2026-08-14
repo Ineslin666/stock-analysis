@@ -32,6 +32,7 @@
 ## 运行约定
 
 - Python 用项目虚拟环境：`.venv/bin/python`（系统 python3 仅用于 devlog.py）
-- 启动网站：`.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8000`（阶段 4 起可用）
+- 每日启动（用户日常）：`./start.sh`——先跑当日筛选（约 3~5 分钟，终端可见进度）再自动打开网站 http://127.0.0.1:8000
+- 直接启动网站（跳过筛选）：`.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8000`（启动时有自检兜底）
 - 依赖安装：`.venv/bin/pip install -r requirements.txt`
 - 数据与缓存都在 `data/`（git 忽略），可删除重建

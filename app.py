@@ -7,11 +7,10 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,9 +59,8 @@ templates.env.globals.update(badge_labels=BADGE_LABELS, fmt1=fmt1, fmt2=fmt2,
                              fmt_pct=fmt_pct, fmt_amount=fmt_amount)
 
 
-# ---------- 每日筛选：18:30 定时任务 + 启动补跑兜底（02 技术方案 §4） ----------
+# ---------- 每日筛选：晨间一键运行（start.sh）+ 启动自检兜底（02 技术方案 §4） ----------
 
-SCREEN_TIME = "18:30"   # 新浪日线当日 K 线约 17:00~18:00 才发布，故定在 18:30（02 规范 §4）
 _run_lock = threading.Lock()
 
 
@@ -72,7 +70,7 @@ def _run_today(reason: str) -> None:
         print(f"[run] 已有筛选任务进行中，跳过（{reason}）", flush=True)
         return
     try:
-        fetcher.fetch_snapshot(force=True)   # force：刷新最终价，避免快照 TTL=当天 停留盘中值
+        fetcher.fetch_snapshot(force=True)   # force：刷新最新价，避免快照 TTL=当天 停留旧值
         screener.run()
         analyzer.run()
         print(f"[run] 当日筛选完成（{reason}）", flush=True)
@@ -82,58 +80,26 @@ def _run_today(reason: str) -> None:
         _run_lock.release()
 
 
-def _screen_cutoff(td: str) -> datetime:
-    return datetime.strptime(f"{td} {SCREEN_TIME}:00", "%Y-%m-%d %H:%M:%S")
+def _maybe_backfill() -> None:
+    """启动自检（后台线程，不阻塞启动）：今天交易日且尚无当日推荐 → 补跑。
 
-
-def _screen_needed(td: str) -> bool:
-    """最新交易日 td 是否需要筛选：当日无推荐；或推荐生成于 18:30 前（可能用了盘中数据）且现在已过 18:30。"""
-    try:
-        recs = db.get_recommendations(td)
-        if recs.empty:
-            return True
-        cutoff = _screen_cutoff(td)
-        return recs["created_at"].max() < cutoff.isoformat() and datetime.now() >= cutoff
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _scheduled_job() -> None:
-    """筛选自检（18:30 定时 + 每 30 分钟兜底 + 启动补跑，三处共用同一套判断）：
-    最新交易日无推荐 → 跑；推荐为盘中生成且已过 18:30 → 完整数据重跑覆盖；否则跳过。
-    电脑睡眠错过 18:30 也没关系：醒来后 30 分钟内自动补上，周末开机也能补跑周五的。"""
+    日常主路径是 ./start.sh（先跑 scripts/daily_run.py 再开网站）；本函数只是
+    用户直接以 uvicorn 启动网站时的兜底。
+    """
     try:
         td = fetcher.latest_trade_date()
-        if not td:
+        if td != date.today().isoformat():
             return
-        if td == date.today().isoformat() and datetime.now() < _screen_cutoff(td):
-            if not db.get_recommendations(td).empty:
-                print("[scheduler] 盘中且已有推荐，等待 18:30 后用完整数据重跑", flush=True)
-                return
-            # 盘中尚无推荐（如早上补跑失败）→ 用可得数据先跑一版，18:30 后还会重跑覆盖
+        if not db.get_recommendations(td).empty:
+            return
     except Exception:  # noqa: BLE001
         return
-    if not _screen_needed(td):
-        return
-    _run_today(f"定时补跑 {td}")
-
-
-def _maybe_backfill() -> None:
-    """启动自检（后台线程，不阻塞启动）：复用 _scheduled_job 的同一套判断。"""
-    threading.Thread(target=_scheduled_job, daemon=True).start()
+    threading.Thread(target=_run_today, args=("启动自动运行",), daemon=True).start()
 
 
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(_scheduled_job, "cron", hour=18, minute=30, day_of_week="mon-fri",
-                      id="daily_screen", misfire_grace_time=4 * 3600, coalesce=True,
-                      max_instances=1)
-    scheduler.add_job(_scheduled_job, "interval", minutes=30, id="screen_catchup",
-                      coalesce=True, max_instances=1)
-    scheduler.start()
-    print("[scheduler] 已启动：交易日 18:30 自动筛选 + 每 30 分钟自检补跑（错过 18:30 也不漏）", flush=True)
     _maybe_backfill()
 
 
@@ -213,8 +179,8 @@ def index(request: Request):
     if recs.empty:
         return templates.TemplateResponse(request, "index.html",
                                           {"active": "index", "recs": [], "rec_date": "-",
-                                           "banner": "还没有推荐数据。网站会在每个交易日 18:30 自动生成；"
-                                                     "若是刚启动，请稍等几分钟后刷新本页。",
+                                           "banner": "还没有推荐数据。请在终端运行 ./start.sh 生成"
+                                                     "（约 3~5 分钟），完成后刷新本页。",
                                            "update_note": None})
     rec_date = recs["rec_date"].max()
     rows = db.get_recommendations(rec_date)
@@ -230,10 +196,9 @@ def index(request: Request):
         log = db.get_last_screening_log()
         if td and rec_date != td:
             banner = (f"今日（{td}）的推荐还没有生成，以下显示的是 {rec_date} 的结果。"
-                      "网站会在每个交易日 18:30 自动更新；若今天收盘后仍未更新，"
-                      "请检查网络后重新启动网站。")
+                      "请在终端运行 ./start.sh 更新，完成后刷新本页。")
             if log and log["run_date"] == td and log["status"] == "error" and log["error_msg"]:
-                banner += f"（最近一次自动筛选失败：{log['error_msg']}）"
+                banner += f"（最近一次筛选失败：{log['error_msg']}）"
         elif log and log["run_date"] == td and log["status"] == "ok" and log["run_time"]:
             update_note = f"已于 {log['run_time'][11:16]} 更新"
     except Exception:  # noqa: BLE001 日历/日志不可用则静默降级

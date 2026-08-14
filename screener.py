@@ -48,6 +48,12 @@ def is_high_leverage(industry: Optional[str]) -> bool:
 
 # ---------- ① 基础过滤 ----------
 
+def _market_in_session() -> bool:
+    """粗略判断是否盘中（9:15~15:05）。盘中当日成交额尚未累积完，不可作流动性初筛。"""
+    minutes = datetime.now().hour * 60 + datetime.now().minute
+    return 9 * 60 + 15 <= minutes <= 15 * 60 + 5
+
+
 def base_pool(trade_date: str) -> pd.DataFrame:
     """基础过滤：剔除 ST/次新/停牌/低流动性（初筛）。返回候选池 DataFrame。"""
     cutoff = (date.fromisoformat(trade_date) - timedelta(days=365 * MIN_LIST_YEARS)).isoformat()
@@ -58,7 +64,12 @@ def base_pool(trade_date: str) -> pd.DataFrame:
     df = df[df["list_date"] <= cutoff]                                # 次新股
     df = df[df["name"].notna() & ~df["name"].str.contains("ST|退", na=False)]  # ST/退市
     df = df[df["price"].notna() & (df["price"] > 0)]                  # 停牌/异常
-    df = df[df["turnover_today"].notna() & (df["turnover_today"] >= MIN_TURNOVER_TODAY)]
+    if _market_in_session():
+        # 盘中：当日成交额还在累积（开盘前后快照该字段甚至全为 0，2026-08-14 实测会误杀全市场），
+        # 初筛跳过成交额门槛，流动性由打分前的"20 日均成交额 ≥ 5000 万"精确核查兜底（04 规范 §2 盘中例外）
+        df = df[df["turnover_today"].notna()]
+    else:
+        df = df[df["turnover_today"].notna() & (df["turnover_today"] >= MIN_TURNOVER_TODAY)]
     return df
 
 
