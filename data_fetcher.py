@@ -158,9 +158,14 @@ def fetch_snapshot(force: bool = False) -> pd.DataFrame:
         det = det.copy()
         det["code"] = det["code"].astype(str).str.zfill(6)
         det["industry"] = label2industry.get(label, "其他")
-        db.upsert_snapshot([{
-            "code": r["code"], "industry": r["industry"], "updated_at": now,
-        } for _, r in det.iterrows()])
+        rows = []
+        for _, r in det.iterrows():
+            row = {"code": r["code"], "industry": r["industry"], "updated_at": now}
+            mv = r.get("mktcap")
+            if mv is not None and pd.notna(mv) and float(mv) > 0:
+                row["total_mv"] = float(mv) * 1e4  # 万元 → 元；停牌留空保留旧值
+            rows.append(row)
+        db.upsert_snapshot(rows)
         _throttle()
 
     return db.get_snapshot()
