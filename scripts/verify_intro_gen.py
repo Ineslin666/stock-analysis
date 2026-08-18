@@ -183,7 +183,7 @@ def _test_ensure() -> None:
         {"content": [{"type": "text", "text": industry_json}]},
     ])
     fake, restore = _setup_requests(None)
-    fake.post = lambda url, **kw: _FakeResp(next(replies))
+    fake.post = lambda url, **kw: (fake.calls.append((url, kw)) or _FakeResp(next(replies)))
     picked = [{"code": "600100", "name": "测试股", "industry": "测试行业"}]
     try:
         r1 = intro_gen.ensure_coverage(picked)
