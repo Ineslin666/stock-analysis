@@ -53,3 +53,34 @@ def missing_coverage(codes: list, industries: list) -> dict:
         if i and load_industry(i) is None:
             inds.append(i)
     return {"stocks": stocks, "industries": inds}
+
+
+def save_stock(entry: dict) -> bool:
+    """写入个股条目；文件已存在则跳过（不覆盖，人工条目优先）。返回是否写入。"""
+    code = entry.get("code")
+    if not code:
+        return False
+    path = STOCK_DIR / f"{code}.json"
+    if path.exists():
+        return False
+    return _write(path, entry)
+
+
+def save_industry(card: dict) -> bool:
+    """写入行业科普卡；文件已存在则跳过（不覆盖）。返回是否写入。"""
+    industry = card.get("industry")
+    if not industry:
+        return False
+    path = INDUSTRY_DIR / f"{_safe_name(industry)}.json"
+    if path.exists():
+        return False
+    return _write(path, card)
+
+
+def _write(path: Path, data: dict) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return True
+    except OSError:
+        return False
