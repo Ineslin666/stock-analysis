@@ -126,10 +126,54 @@ def _test_api_key_and_call() -> None:
         restore()
 
 
+def _test_validate() -> None:
+    good = {"what": "一句话", "life": "钩子", "products": ["A", "B"],
+            "upstream": [{"name": "甲", "role": "r"}],
+            "downstream": [{"name": "乙", "role": "r"}]}
+    out = intro_gen._validate_stock(good, "600001", "测试股")
+    check("_validate_stock 合法通过且带真实 code/name",
+          out is not None and out["code"] == "600001" and out["name"] == "测试股")
+    check("_validate_stock 覆盖模型自报 code/name",
+          intro_gen._validate_stock({**good, "code": "X", "name": "Y"}, "600001", "测试股")["code"] == "600001")
+    check("_validate_stock 缺 life 拒绝", intro_gen._validate_stock({**good, "life": ""}, "600001", "测试股") is None)
+    check("_validate_stock products 非列表拒绝", intro_gen._validate_stock({**good, "products": "AB"}, "600001", "测试股") is None)
+    check("_validate_stock upstream 缺 role 拒绝",
+          intro_gen._validate_stock({**good, "upstream": [{"name": "甲"}]}, "600001", "测试股") is None)
+    good_ind = {"what": "w", "money": "m", "products": "p", "upstream": ["a"], "downstream": ["b"]}
+    check("_validate_industry 合法通过且带真实行业名",
+          intro_gen._validate_industry(good_ind, "测试行业")["industry"] == "测试行业")
+    check("_validate_industry 缺 money 拒绝", intro_gen._validate_industry({**good_ind, "money": ""}, "测试行业") is None)
+
+
+def _test_gen_retry() -> None:
+    good = json.dumps({"what": "w", "life": "l", "products": ["p"],
+                       "upstream": [{"name": "a", "role": "r"}],
+                       "downstream": [{"name": "b", "role": "r"}]}, ensure_ascii=False)
+    replies = iter([
+        {"content": [{"type": "text", "text": "不是 JSON"}]},
+        {"content": [{"type": "text", "text": good}]},
+    ])
+    fake, restore = _setup_requests(None)
+    fake.post = lambda url, **kw: _FakeResp(next(replies))
+    try:
+        entry = intro_gen.gen_stock({"code": "600001", "name": "测试股", "industry": "测试行业"})
+        check("gen_stock 首次不合法后重试成功", entry is not None and entry["code"] == "600001")
+    finally:
+        restore()
+    fake2, restore2 = _setup_requests({"content": [{"type": "text", "text": "垃圾"}]})
+    try:
+        check("gen_stock 两次不合法返回 None（只调 2 次）",
+              intro_gen.gen_stock({"code": "1", "name": "x"}) is None and len(fake2.calls) == 2)
+    finally:
+        restore2()
+
+
 def main() -> int:
     _test_knowledge_save()
     _test_parse_and_extract()
     _test_api_key_and_call()
+    _test_validate()
+    _test_gen_retry()
     if FAILED:
         print(f"\n{len(FAILED)} 项失败：")
         for name in FAILED:
