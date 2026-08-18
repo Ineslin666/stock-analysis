@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import json
 
+import db
 import intro_gen
 import knowledge
 
@@ -168,12 +169,51 @@ def _test_gen_retry() -> None:
         restore2()
 
 
+def _test_ensure() -> None:
+    tmp = Path(tempfile.mkdtemp(prefix="verify_ensure_"))
+    knowledge.STOCK_DIR = tmp / "stocks"
+    knowledge.INDUSTRY_DIR = tmp / "industries"
+    stock_json = json.dumps({"what": "w", "life": "l", "products": ["p"],
+                             "upstream": [{"name": "a", "role": "r"}],
+                             "downstream": [{"name": "b", "role": "r"}]}, ensure_ascii=False)
+    industry_json = json.dumps({"what": "w", "money": "m", "products": "p",
+                                "upstream": ["a"], "downstream": ["b"]}, ensure_ascii=False)
+    replies = iter([
+        {"content": [{"type": "text", "text": stock_json}]},
+        {"content": [{"type": "text", "text": industry_json}]},
+    ])
+    fake, restore = _setup_requests(None)
+    fake.post = lambda url, **kw: _FakeResp(next(replies))
+    picked = [{"code": "600100", "name": "测试股", "industry": "测试行业"}]
+    try:
+        r1 = intro_gen.ensure_coverage(picked)
+        check("ensure_coverage 补上缺的个股与行业",
+              len(r1["generated"]) == 2 and not r1["missing"]["stocks"] and not r1["missing"]["industries"])
+        check("ensure_coverage 文件已写入知识库", knowledge.load_stock("600100") is not None)
+        r2 = intro_gen.ensure_coverage(picked)
+        check("ensure_coverage 幂等（已有条目不再生成、不再请求）",
+              r2["generated"] == [] and len(fake.calls) == 2)
+    finally:
+        restore()
+    orig_key = intro_gen.api_key
+    intro_gen.api_key = lambda: None
+    try:
+        r3 = intro_gen.ensure_coverage([{"code": "600200", "name": "乙", "industry": "行业乙"}])
+        check("ensure_coverage 无密钥回退为缺失报告",
+              r3["skipped_no_key"] is True and r3["missing"]["stocks"] == ["600200"]
+              and r3["missing"]["industries"] == ["行业乙"] and r3["generated"] == [])
+    finally:
+        intro_gen.api_key = orig_key
+
+
 def main() -> int:
+    db.init_db()
     _test_knowledge_save()
     _test_parse_and_extract()
     _test_api_key_and_call()
     _test_validate()
     _test_gen_retry()
+    _test_ensure()
     if FAILED:
         print(f"\n{len(FAILED)} 项失败：")
         for name in FAILED:

@@ -14,6 +14,7 @@ from typing import Optional
 import requests
 
 import db
+import knowledge
 
 ROOT = Path(__file__).resolve().parent
 KEY_PATH = ROOT / ".deepseek_key"
@@ -268,3 +269,83 @@ def _with_snapshot(stock: dict) -> dict:
             if fin[k] is not None:
                 out.setdefault(k, fin[k])
     return out
+
+
+def ensure_coverage(picked: list) -> dict:
+    """对当日推荐补写知识库缺条目（只补缺、不覆盖已有文件）。
+
+    返回报告：
+    {"generated": [{type, code/industry, name?}], "entries": {key: dict},
+     "missing": {"stocks": [...], "industries": [...]}, "skipped_no_key": bool}
+    """
+    report = {"generated": [], "entries": {},
+              "missing": {"stocks": [], "industries": []}, "skipped_no_key": False}
+    codes = [x["code"] for x in picked]
+    industries = [x.get("industry") for x in picked if x.get("industry")]
+    miss = knowledge.missing_coverage(codes, industries)
+    if not (miss["stocks"] or miss["industries"]):
+        return report
+    if api_key() is None:
+        report["missing"] = miss
+        report["skipped_no_key"] = True
+        return report
+    by_code = {x["code"]: x for x in picked}
+    for code in miss["stocks"]:
+        stock = _with_snapshot(by_code.get(code) or {"code": code, "name": code})
+        entry = gen_stock(stock)
+        if entry is not None and knowledge.save_stock(entry):
+            report["generated"].append({"type": "stock", "code": code, "name": entry["name"]})
+            report["entries"][code] = entry
+        else:
+            report["missing"]["stocks"].append(code)
+    for ind in miss["industries"]:
+        card = gen_industry(ind)
+        if card is not None and knowledge.save_industry(card):
+            report["generated"].append({"type": "industry", "industry": ind})
+            report["entries"][ind] = card
+        else:
+            report["missing"]["industries"].append(ind)
+    return report
+
+
+def print_entry(entry: dict) -> None:
+    """终端打印条目全文（供人工扫一眼；按有无 code 区分个股/行业卡）。"""
+    if "code" in entry:
+        up = "、".join(f"{c['name']}（{c['role']}）" for c in entry["upstream"])
+        down = "、".join(f"{c['name']}（{c['role']}）" for c in entry["downstream"])
+        print(f"    what: {entry['what']}")
+        print(f"    life: {entry['life']}")
+        print(f"    产品: {'、'.join(entry['products'])}")
+        print(f"    上游: {up}")
+        print(f"    下游: {down}")
+    else:
+        print(f"    what: {entry['what']}")
+        print(f"    赚钱: {entry['money']}")
+        print(f"    产品: {entry['products']}")
+        print(f"    上游: {'、'.join(entry['upstream'])}")
+        print(f"    下游: {'、'.join(entry['downstream'])}")
+
+
+def print_report(report: dict, picked: list) -> None:
+    """终端打印 AI 补写报告（daily_run 与 gen_intro.py 共用）。"""
+    for g in report["generated"]:
+        entry = report["entries"].get(g.get("code") or g.get("industry"))
+        if g["type"] == "stock":
+            print(f"  ✓ {g['name']} {g['code']} 条目已由 AI 生成并入库：")
+        else:
+            print(f"  ✓ 行业卡「{g['industry']}」已由 AI 生成并入库：")
+        if entry:
+            print_entry(entry)
+    if report["skipped_no_key"]:
+        print("  ℹ️ 未配置 .deepseek_key（项目根目录），AI 补写已跳过")
+    miss = report["missing"]
+    if not (miss["stocks"] or miss["industries"]):
+        print("知识库覆盖完整，公司介绍模块将完整展示。")
+        return
+    print("⚠️ 知识库仍缺条目（公司介绍模块将降级显示）：")
+    if miss["stocks"]:
+        names = {x["code"]: x["name"] for x in picked}
+        items = [f"{c} {names.get(c, '')}".strip() for c in miss["stocks"]]
+        print(f"  · 缺个股条目：{'、'.join(items)}（可运行 scripts/gen_intro.py <代码> 重试）")
+    if miss["industries"]:
+        print(f"  · 缺行业卡：{'、'.join(miss['industries'])}")
