@@ -8,6 +8,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import json
+
+import intro_gen
 import knowledge
 
 FAILED = []
@@ -41,8 +44,92 @@ def _test_knowledge_save() -> None:
     check("save_industry 缺 industry 拒绝", knowledge.save_industry({"what": "x"}) is False)
 
 
+class _FakeRequests:
+    """替代 intro_gen.requests：记录调用、返回预设响应。"""
+
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return _FakeResp(self.payload)
+
+
+class _FakeResp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+def _setup_requests(payload):
+    """临时替换 intro_gen.requests 与 api_key，返回 (fake, restore)。"""
+    orig_requests, orig_key = intro_gen.requests, intro_gen.api_key
+    fake = _FakeRequests(payload)
+    intro_gen.requests = fake
+    intro_gen.api_key = lambda: "sk-test"
+
+    def restore():
+        intro_gen.requests = orig_requests
+        intro_gen.api_key = orig_key
+
+    return fake, restore
+
+
+def _test_parse_and_extract() -> None:
+    resp = {"content": [
+        {"type": "thinking", "thinking": "思考中…"},
+        {"type": "text", "text": "{"},
+        {"type": "text", "text": '"a": 1}'},
+    ]}
+    check("_parse_text_blocks 跳过 thinking 并拼接", intro_gen._parse_text_blocks(resp) == '{"a": 1}')
+    check("_parse_text_blocks 坏结构返回 None", intro_gen._parse_text_blocks({}) is None)
+    check("_extract_json 纯 JSON", intro_gen._extract_json('{"a": 1}') == {"a": 1})
+    check("_extract_json 代码围栏", intro_gen._extract_json('```json\n{"b": 2}\n```') == {"b": 2})
+    check("_extract_json 前后杂文", intro_gen._extract_json('好的，以下是内容：\n{"c": 3}') == {"c": 3})
+    check("_extract_json 非法返回 None", intro_gen._extract_json("不是 JSON") is None)
+    check("_extract_json 数组返回 None", intro_gen._extract_json("[1,2]") is None)
+
+
+def _test_api_key_and_call() -> None:
+    orig_path = intro_gen.KEY_PATH
+    tmp = Path(tempfile.mkdtemp(prefix="verify_key_"))
+    intro_gen.KEY_PATH = tmp / "key"
+    try:
+        check("api_key 无文件返回 None", intro_gen.api_key() is None)
+        (tmp / "key").write_text("  sk-abc123 \n", encoding="utf-8")
+        check("api_key 读取并去空白", intro_gen.api_key() == "sk-abc123")
+    finally:
+        intro_gen.KEY_PATH = orig_path
+    fake, restore = _setup_requests({"content": [
+        {"type": "thinking", "thinking": "x"},
+        {"type": "text", "text": "回复文本"},
+    ]})
+    try:
+        check("_call_once 成功返回文本", intro_gen._call_once("sys", "u") == "回复文本")
+        url, kw = fake.calls[0]
+        check("_call_once 请求 URL 正确", url == intro_gen.API_URL)
+        check("_call_once 模型与请求头正确",
+              kw["json"]["model"] == intro_gen.MODEL
+              and kw["headers"]["x-api-key"] == "sk-test"
+              and kw["headers"]["anthropic-version"] == "2023-06-01")
+        check("_call_once 带 system 与 user 消息",
+              kw["json"]["system"] == "sys" and kw["json"]["messages"] == [{"role": "user", "content": "u"}])
+        intro_gen.api_key = lambda: None
+        check("_call_once 无密钥不发请求", intro_gen._call_once("s", "u") is None and len(fake.calls) == 1)
+    finally:
+        restore()
+
+
 def main() -> int:
     _test_knowledge_save()
+    _test_parse_and_extract()
+    _test_api_key_and_call()
     if FAILED:
         print(f"\n{len(FAILED)} 项失败：")
         for name in FAILED:
