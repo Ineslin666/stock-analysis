@@ -128,7 +128,8 @@ def run(date_str: Optional[str] = None, dry_run: bool = False) -> list[dict]:
     results = []
     for _, r in recs.iterrows():
         out = analyze(r["code"], float(r["close_price"] or 0), r["pe_ttm"], r["pe_percentile"])
-        out.update({"code": r["code"], "name": r["name"], "rank": int(r["rank"])})
+        out.update({"code": r["code"], "name": r["name"], "rank": int(r["rank"]),
+                    "industry": r["industry"]})
         if not dry_run:
             db.set_verdict(date_str, r["code"], out["verdict"], out["verdict_reason"],
                            out["ref_low"], out["ref_high"])

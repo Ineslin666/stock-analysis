@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import analyzer
+import knowledge
 import db
 import data_fetcher as fetcher
 import screener
@@ -171,6 +172,36 @@ def _indicator_groups(rec, snap, fin, basis, pb_pct) -> list[dict]:
     ]
 
 
+def _build_intro(code: str, stock: dict, rec) -> Optional[dict]:
+    """公司介绍模块数据（01 规范 F8 / 03 规范 §4.5）。
+
+    个股条目缺失 → 返回 None（整个模块隐藏）；行业卡缺失 → 只隐藏行业段。
+    龙头与排名按 stock_snapshot 中同行业且 total_mv > 0 的股票排名（快照口径）。
+    """
+    entry = knowledge.load_stock(code)
+    if not entry:
+        return None
+    industry = (stock.get("industry")
+                or (rec["industry"] if rec is not None else None)
+                or entry.get("industry"))
+    card = knowledge.load_industry(industry) if industry else None
+    leaders, rank, size = [], None, None
+    if industry:
+        snap_all = db.get_snapshot()
+        peers = snap_all[(snap_all["industry"] == industry) & (snap_all["total_mv"] > 0)]
+        if not peers.empty:
+            peers = peers.sort_values("total_mv", ascending=False).reset_index(drop=True)
+            leaders = [{"name": r["name"], "mv": float(r["total_mv"]),
+                        "self": r["code"] == code}
+                       for _, r in peers.head(3).iterrows()]
+            self_row = peers[peers["code"] == code]
+            if not self_row.empty:
+                rank = int(peers.index.get_loc(self_row.index[0])) + 1
+                size = len(peers)
+    return {"stock": entry, "industry_name": industry, "industry": card,
+            "leaders": leaders, "rank": rank, "size": size}
+
+
 # ---------- 路由 ----------
 
 @app.get("/", response_class=HTMLResponse)
@@ -231,9 +262,10 @@ def stock_page(request: Request, code: str):
         if not pb_s.empty and last_pb:
             pb_pct = screener.pe_percentile(pb_s, float(last_pb))
     groups = _indicator_groups(rec, snap, fin, basis, pb_pct) if rec is not None else []
+    intro = _build_intro(code, stock, rec)
     return templates.TemplateResponse(request, "stock.html", {
         "active": "", "stock": stock, "rec": rec, "price": basis["price"], "chg": basis["chg"],
-        "groups": groups,
+        "groups": groups, "intro": intro,
     })
 
 

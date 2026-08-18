@@ -35,6 +35,42 @@
 </div>
 {% endif %}
 
+{% if intro %}
+<!-- 公司介绍模块（01 F8 / 03 §4.5） -->
+<h2 class="section-title">这家公司是做什么的？</h2>
+<div class="panel intro-card">
+  {% if intro.industry %}
+  <div class="intro-sec">
+    <div class="intro-sec-title">行业：{{ intro.industry_name }}</div>
+    <p class="intro-text">{{ intro.industry.what }}</p>
+    <p class="intro-text">{{ intro.industry.money }}</p>
+    <p class="intro-text">代表产品：{{ intro.industry.products }}</p>
+    <p class="intro-text">上游：{{ intro.industry.upstream|join('、') }}</p>
+    <p class="intro-text">下游：{{ intro.industry.downstream|join('、') }}</p>
+  </div>
+  {% endif %}
+  <div class="intro-sec">
+    <div class="intro-sec-title">这家公司</div>
+    <p class="intro-text">{{ intro.stock.what }}</p>
+    <p class="intro-text">你可能在哪见过它：{{ intro.stock.life }}</p>
+    <p class="intro-text">代表产品：{{ intro.stock.products|join('、') }}</p>
+    <p class="intro-text">上游：{% for u in intro.stock.upstream %}{{ u.name }}（{{ u.role }}）{% if not loop.last %}、{% endif %}{% endfor %}</p>
+    <p class="intro-text">下游：{% for d in intro.stock.downstream %}{{ d.name }}（{{ d.role }}）{% if not loop.last %}、{% endif %}{% endfor %}</p>
+  </div>
+  {% if intro.leaders %}
+  <div class="intro-sec">
+    <div class="intro-sec-title">行业里的位置</div>
+    {% for l in intro.leaders %}
+    <p class="intro-text">龙头{{ loop.index }}：{{ l.name }}（{{ fmt_amount(l.mv) }}）{% if l.self %} ← 本股{% endif %}</p>
+    {% endfor %}
+    {% if intro.rank %}
+    <p class="intro-text">{{ intro.stock.name }}在该行业排第 {{ intro.rank }} 位（可统计 {{ intro.size }} 家）</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- 五组指标（03 §4.3） -->
 {% for group in groups %}
 <h2 class="section-title">{{ group.title }}</h2>
