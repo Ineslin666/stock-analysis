@@ -167,12 +167,13 @@ def valuation_check(code: str, trade_date: str) -> tuple[bool, str, dict]:
 # ---------- ④ 打分 ----------
 
 def score_quality(fin: dict, dividend: Optional[float], industry: Optional[str]) -> tuple[int, list[str]]:
-    """质量分（满分 40）。返回 (得分, 亮点说明)。"""
-    parts = []
+    """质量分（满分 40）。返回 (得分, 亮点说明)。04 规范 §5 v1.3：
+    ROE 12 + 成长 10 + 现金流 8 + 股东回报 10（股息率 3 + 分红率 4 + 回购率 3）。"""
+    parts = []  # (名称, 得分, 满分)
 
     roe = fin.get("roe_latest") or 0
-    roe_score = 15 if roe > 20 else 12 if roe >= 15 else 8 if roe >= 12 else 0
-    parts.append(("ROE", roe_score))
+    roe_score = 12 if roe > 20 else 9 if roe >= 15 else 6 if roe >= 12 else 0
+    parts.append(("ROE", roe_score, 12))
 
     rev = fin.get("revenue_cagr3")
     pro = fin.get("profit_cagr3")
@@ -182,22 +183,28 @@ def score_quality(fin: dict, dividend: Optional[float], industry: Optional[str])
         else 2 if rev is not None and rev > 0 else 0
     pro_score = 5 if pro is not None and pro > 20 else 4 if pro is not None and pro >= 10 \
         else 2 if pro is not None and pro > 0 else 0
-    parts.append(("成长", rev_score + pro_score))
+    parts.append(("成长", rev_score + pro_score, 10))
 
     ocf = fin.get("ocf_to_profit")
     if is_financial(industry) and ocf is None:
         ocf_score = 0
     else:
-        ocf_score = 10 if ocf is not None and ocf >= 1.0 else 6 if ocf is not None and ocf >= OCF_MIN else 0
-    parts.append(("现金流", ocf_score))
+        ocf_score = 8 if ocf is not None and ocf >= 1.0 else 5 if ocf is not None and ocf >= OCF_MIN else 0
+    parts.append(("现金流", ocf_score, 8))
 
-    div_score = 5 if dividend is not None and dividend > 2 else 3 if dividend is not None and dividend >= 1 \
+    # 股东回报 10 = 股息率(3) + 分红率(4) + 回购率(3)；分红率/回购率缺失计 0 分不剔除（04 §7）
+    div_sub = 3 if dividend is not None and dividend > 2 else 2 if dividend is not None and dividend >= 1 \
         else 1 if dividend is not None and dividend > 0 else 0
-    parts.append(("股息", div_score))
+    payout = fin.get("payout_ratio")
+    pay_sub = 4 if payout is not None and payout > 70 else 3 if payout is not None and payout >= 50 \
+        else 2 if payout is not None and payout >= 30 else 1 if payout is not None else 0
+    buyback = fin.get("buyback_ratio")
+    bb_sub = 3 if buyback is not None and buyback > 20 else 2 if buyback is not None and buyback > 10 \
+        else 1 if buyback is not None and buyback > 0 else 0
+    parts.append(("股东回报", div_sub + pay_sub + bb_sub, 10))
 
-    highlights = [f"{n} {s}/{'15' if n == 'ROE' else '10' if n in ('成长', '现金流') else '5'}"
-                  for n, s in parts]
-    return sum(s for _, s in parts), highlights
+    highlights = [f"{n} {s}/{m}" for n, s, m in parts]
+    return sum(s for _, s, _ in parts), highlights
 
 
 def score_valuation(pe_pct: Optional[float]) -> int:

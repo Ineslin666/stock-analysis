@@ -268,7 +268,11 @@ def stock_page(request: Request, code: str):
         "groups": groups, "intro": intro,
     })
 
-
+@app.get("/api/stock/{code}")
+def stock_api(code: str):
+    return {
+        "code": code
+    }
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request):
     recs = db.get_recommendations()

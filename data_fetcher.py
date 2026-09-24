@@ -52,6 +52,29 @@ def _today() -> str:
     return date.today().isoformat()
 
 
+# ---------- 股东回报派生计算（纯函数，单测见 tests/test_metrics.py） ----------
+
+def shares_outstanding(total_mv: Optional[float], price: Optional[float]) -> Optional[float]:
+    """总股本 = 总市值 / 现价。任一缺失或现价≤0 返回 None。"""
+    if total_mv is None or price is None or price <= 0:
+        return None
+    return total_mv / price
+
+
+def dividend_amount_from_per10(pay_sum_per10: Optional[float], shares: Optional[float]) -> Optional[float]:
+    """近 12 月分红金额（元）= Σ派息(每10股) / 10 × 总股本。"""
+    if pay_sum_per10 is None or shares is None:
+        return None
+    return pay_sum_per10 / 10 * shares
+
+
+def ratio_pct(amount: Optional[float], base: Optional[float]) -> Optional[float]:
+    """占比（%）= amount / base × 100（分红率/回购率共用）。base 缺失或≤0 返回 None。"""
+    if amount is None or base is None or base <= 0:
+        return None
+    return amount / base * 100
+
+
 # ---------- 交易日历 ----------
 
 def fetch_trade_calendar(force: bool = False) -> pd.DataFrame:

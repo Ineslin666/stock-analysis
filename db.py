@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS stock_finance (
     net_margin    REAL,               -- 销售净利率（%）
     goodwill_ratio REAL,              -- 商誉/净资产（%）
     goodwill_updated_at TEXT,         -- 商誉数据更新时间（缓存 TTL 依据）
+    net_profit     REAL,              -- 最新年报归母净利润（元），阶段 8
+    dividend_amount REAL,             -- 近12月已实施分红金额（元）
+    buyback_amount REAL,              -- 近12月回购金额（元）
+    payout_updated_at TEXT,           -- 分红额/净利 更新时间（缓存 TTL 30 天依据）
+    buyback_updated_at TEXT,          -- 回购数据更新时间（缓存 TTL 30 天依据）
     report_date   TEXT,               -- 数据所属年报日期 YYYY-MM-DD
     updated_at    TEXT
 );
@@ -117,6 +122,13 @@ def init_db() -> None:
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(recommendations)")}
         if "verdict_reason" not in cols:
             conn.execute("ALTER TABLE recommendations ADD COLUMN verdict_reason TEXT")
+        # 迁移：老库 stock_finance 缺阶段 8 股东回报列则补上
+        fin_cols = {r["name"] for r in conn.execute("PRAGMA table_info(stock_finance)")}
+        for col, typ in (("net_profit", "REAL"), ("dividend_amount", "REAL"),
+                         ("buyback_amount", "REAL"), ("payout_updated_at", "TEXT"),
+                         ("buyback_updated_at", "TEXT")):
+            if col not in fin_cols:
+                conn.execute(f"ALTER TABLE stock_finance ADD COLUMN {col} {typ}")
 
 
 def _exec(sql: str, params: Iterable[Any] = ()) -> None:
@@ -275,10 +287,27 @@ def set_snapshot_field(code: str, field: str, value: Any) -> None:
     _exec(f"UPDATE stock_snapshot SET {field} = ? WHERE code = ?", (value, code))
 
 
+_FINANCE_FIELD_WHITELIST = ("goodwill_ratio", "goodwill_updated_at",
+                            "net_profit", "dividend_amount", "buyback_amount",
+                            "payout_updated_at", "buyback_updated_at")
+
+
 def set_finance_field(code: str, field: str, value: Any) -> None:
-    if field not in ("goodwill_ratio", "goodwill_updated_at"):
+    """回填 stock_finance 单个字段（股息率、20日成交额等）。字段名白名单防注入。"""
+    if field not in _FINANCE_FIELD_WHITELIST:
         raise ValueError(f"非法字段: {field}")
     _exec(f"UPDATE stock_finance SET {field} = ? WHERE code = ?", (value, code))
+
+
+def update_finance_fields(code: str, fields: dict) -> None:
+    """回填 stock_finance 多个字段（fetcher 维护股东回报时用）。字段名白名单防注入。"""
+    bad = set(fields) - set(_FINANCE_FIELD_WHITELIST)
+    if bad:
+        raise ValueError(f"非法字段: {bad}")
+    if not fields:
+        return
+    sets = ", ".join(f"{c} = ?" for c in fields)
+    _exec(f"UPDATE stock_finance SET {sets} WHERE code = ?", [*fields.values(), code])
 
 
 # ---------- trade_calendar ----------
