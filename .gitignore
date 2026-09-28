@@ -14,3 +14,4 @@ data/
 
 # Claude Code 本地设置（个人环境，不入库）
 .claude/
+.pytest_cache/
