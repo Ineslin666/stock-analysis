@@ -8,6 +8,7 @@ data/
 
 # DeepSeek API 密钥（个人环境，不入库）
 .deepseek_key
+.env
 
 # macOS
 .DS_Store

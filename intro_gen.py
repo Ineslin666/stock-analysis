@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -25,7 +26,14 @@ MAX_TOKENS = 3000
 
 
 def api_key() -> Optional[str]:
-    """读取 DeepSeek 密钥（.deepseek_key，git 忽略）；缺失返回 None。"""
+    """读取 DeepSeek 密钥。
+
+    优先使用环境变量 DEEPSEEK_API_KEY，兼容项目根目录下的
+    .deepseek_key 文件。两者都未配置时返回 None，不影响其他功能。
+    """
+    env_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if env_key:
+        return env_key
     try:
         key = KEY_PATH.read_text(encoding="utf-8").strip()
     except OSError:

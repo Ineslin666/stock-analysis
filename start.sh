@@ -4,6 +4,13 @@
 # 下班直接关电脑即可（关掉终端窗口 = 关闭网站，不会一直占用后台）。
 cd "$(dirname "$0")"
 
+# 首次使用时给出可操作的提示，避免直接报“文件不存在”。
+if [ ! -x ".venv/bin/python" ]; then
+  echo "尚未完成安装。请先运行："
+  echo "  ./setup.sh"
+  exit 1
+fi
+
 # 网站已在运行则直接打开浏览器，不重复启动
 if lsof -i :8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
   echo "网站已经在运行，直接打开浏览器即可。"
