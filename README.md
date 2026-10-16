@@ -38,6 +38,12 @@ cd stock-analysis
 
 关闭网站：回到终端按 `Control + C`。
 
+### 3. Mac mini 一直开着（可选）
+
+如果有一台经常开着的 Mac mini，可以让网站一直运行，并在每天早上约 08:00（北京时间）自动把当日结果写入数据库。笔记本不用改，继续用上面的 `./start.sh`。
+
+安装步骤见 [文档/08-Mac-mini常驻与自动刷新.md](文档/08-Mac-mini常驻与自动刷新.md)。
+
 ## DeepSeek API（可选）
 
 DeepSeek 只用来为缺失的股票自动生成公司和行业介绍。**不配置 API 也能正常选股和浏览网站。**
@@ -91,5 +97,6 @@ chmod +x setup.sh start.sh
 - SQLite
 - pandas + AkShare
 - 可选 DeepSeek API
+- Mac mini 常驻时用系统自带的 launchd，不在网站进程里另加定时器
 
-更详细的需求、数据结构和筛选规则见 [`文档/`](文档/)。
+更详细的需求、数据结构和筛选规则见 [`文档/`](文档/)。Mac mini 的安装步骤见 [文档/08-Mac-mini常驻与自动刷新.md](文档/08-Mac-mini常驻与自动刷新.md)。
