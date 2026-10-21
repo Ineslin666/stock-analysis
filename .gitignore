@@ -6,6 +6,9 @@ __pycache__/
 # 数据缓存（可重新生成）
 data/
 
+# Mac mini 常驻与每日刷新的运行日志（可删除）
+logs/
+
 # DeepSeek API 密钥（个人环境，不入库）
 .deepseek_key
 .env
